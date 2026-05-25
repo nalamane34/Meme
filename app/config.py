@@ -49,6 +49,14 @@ class Settings(BaseSettings):
 
     blacklist_mints: list[str] = Field(default_factory=list)
 
+    # --- discovery ---
+    discovery_enabled: bool = True
+    discovery_dex_boosts_interval_sec: float = 180.0      # every 3 min
+    discovery_dex_profiles_interval_sec: float = 300.0    # every 5 min
+    discovery_birdeye_interval_sec: float = 600.0         # every 10 min
+    discovery_pumpfun_interval_sec: float = 120.0         # every 2 min
+    discovery_wallet_finder_interval_sec: float = 3600.0  # hourly
+
 
 @lru_cache
 def get_settings() -> Settings:

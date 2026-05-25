@@ -25,6 +25,7 @@ from app.clients.jupiter import JupiterClient
 from app.clients.rugcheck import RugCheckClient
 from app.config import get_settings
 from app.db.models import Position, PositionStatus
+from app.discovery.scheduler import discovery_loop
 from app.executor.trader import Trader
 from app.executor.wallet import Wallet
 from app.logging import configure_logging, get_logger
@@ -62,6 +63,7 @@ async def lifespan(app: FastAPI):
     app.include_router(
         build_helius_router(
             sessionmaker=sessionmaker,
+            redis=redis,
             rugcheck=rugcheck,
             birdeye=birdeye,
             dexscreener=dexscreener,
@@ -74,12 +76,24 @@ async def lifespan(app: FastAPI):
     watcher_task = asyncio.create_task(
         watch_loop(sessionmaker=sessionmaker, trader=trader, birdeye=birdeye)
     )
+    discovery_task = asyncio.create_task(
+        discovery_loop(
+            sessionmaker=sessionmaker,
+            redis=redis,
+            rugcheck=rugcheck,
+            birdeye=birdeye,
+            dexscreener=dexscreener,
+            policy=policy,
+            trader=trader,
+        )
+    )
 
-    log.info("startup", dry_run=s.dry_run, strategy=s.strategy)
+    log.info("startup", dry_run=s.dry_run, strategy=s.strategy, discovery=s.discovery_enabled)
     try:
         yield
     finally:
         watcher_task.cancel()
+        discovery_task.cancel()
         await asyncio.gather(
             jupiter.aclose(), rugcheck.aclose(), birdeye.aclose(), dexscreener.aclose(),
             return_exceptions=True,

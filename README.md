@@ -4,17 +4,23 @@ Reinforcement-learning-assisted Solana meme-coin trading bot.
 
 ## What it does
 
-1. **Watches** a curated set of "smart-money" wallets via Helius webhooks.
-2. **Filters** every candidate token through safety checks (RugCheck score, LP
+1. **Discovers** candidates autonomously from DexScreener boosts/profiles,
+   Birdeye trending + new listings, and pump.fun (near-graduation +
+   just-graduated). Also **watches** any curated smart-money wallets via
+   Helius webhooks.
+2. **Filters** every candidate through safety checks (RugCheck score, LP
    burn, holder distribution, mint authority, freeze authority).
 3. **Scores** survivors with a feature vector (price/volume velocity, holder
-   growth, smart-wallet concentration, time since launch, social signal).
-4. **Decides** with a policy — rule-based baseline today, PPO trained offline
-   on logged trajectories once enough data exists.
+   growth, smart-wallet concentration, time since launch).
+4. **Decides** with a policy — rule-based baseline today, PPO trained
+   offline on logged trajectories once enough data exists.
 5. **Executes** through the Jupiter Ultra API with slippage caps and
    (optionally) Jito bundles for MEV protection.
 6. **Manages risk** outside the policy: hard stop-loss, trailing TP, max
    position size, daily loss circuit-breaker.
+7. **Self-grows** the smart-wallet list: when a position closes
+   profitably, auto-promotes the wallets that bought it early and prunes
+   wallets that don't deliver wins.
 
 ## Two-phase RL plan
 
@@ -71,22 +77,47 @@ the logs for a week and the simulated PnL looks sane.
 - A kill-switch endpoint (`POST /admin/halt`) flushes all positions to
   stables and disables new entries until manually re-armed.
 
+## Autonomous discovery
+
+The bot doesn't need a seeded smart-wallet list to start trading — every
+scanner runs independently on its own cadence:
+
+| Scanner                       | Source                              | Cadence  |
+|-------------------------------|-------------------------------------|----------|
+| DexScreener latest boosts     | `/token-boosts/latest/v1`           | 3 min    |
+| DexScreener latest profiles   | `/token-profiles/latest/v1`         | 5 min    |
+| Birdeye trending              | `/defi/token_trending`              | 10 min   |
+| Birdeye new listings          | `/defi/v2/tokens/new_listing`       | 10 min   |
+| pump.fun near-graduation      | `frontend-api.pump.fun /coins`      | 2 min    |
+| pump.fun just-graduated       | `frontend-api.pump.fun /coins`      | 2 min    |
+| Smart-wallet auto-promotion   | Birdeye top traders of our winners  | 1 hr     |
+
+Every candidate funnels into the same pipeline as the Helius webhook
+signals — same safety gate, same feature vector, same policy. Toggle off
+with `DISCOVERY_ENABLED=false` if you ever want pure copy-trading mode.
+
 ## Layout
 
 ```
 app/
-  main.py                  FastAPI: webhook + admin API
+  main.py                  FastAPI: webhook + admin API + lifespan
   config.py                Pydantic settings
-  webhooks/helius.py       Parses enhanced-tx webhook events
-  clients/                 Jupiter, Helius, RugCheck, Birdeye, DexScreener
+  webhooks/helius.py       Parses enhanced-tx webhook events → pipeline
+  discovery/
+    scheduler.py           Runs every scanner on its own cadence
+    dexscreener.py         Boosts + profiles
+    birdeye.py             Trending + new listings
+    pumpfun.py             Near-graduation + just-graduated
+    wallet_finder.py       Auto-promote smart wallets from winners
+  clients/                 Jupiter, Helius parser, RugCheck, Birdeye, DexScreener
   strategy/
+    pipeline.py            Shared candidate → trade flow
     features.py            Builds the RL state vector
     safety.py              Pre-trade safety gate
     policy.py              Rule-based + RL policy interface
   rl/
     env.py                 Gymnasium env for offline training
-    train.py               PPO/CQL trainer
-    shadow.py              Shadow evaluator vs. baseline
+    train.py               PPO trainer
   executor/
     trader.py              Buy/sell + position management
     wallet.py              Solana Keypair handling

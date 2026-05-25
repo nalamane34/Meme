@@ -51,7 +51,14 @@ class RuleBasedPolicy:
 
     A trade has to clear several thresholds simultaneously. This is the
     baseline the RL agent has to beat in shadow before we promote it.
+
+    The policy is source-agnostic in the sense that it always evaluates
+    the same 8 sub-signals. Discovery candidates won't have smart-wallet
+    activity (signals 7/8) so they have to clear more of the others.
     """
+
+    THRESHOLD_FULL = 5     # of 8 sub-signals
+    THRESHOLD_SMALL = 3
 
     def decide(self, snapshot: FeatureSnapshot) -> Decision:
         m = snapshot.meta
@@ -63,19 +70,23 @@ class RuleBasedPolicy:
         if m["age_min"] > 60 * 24 * 14:
             return Decision(ACTION_SKIP, 0.0, "too_old_no_edge")
 
-        bullish_signals = 0
-        bullish_signals += int(m["price_change_5m"] > 0.05)
-        bullish_signals += int(m["price_change_1h"] > 0.15)
-        bullish_signals += int(m["buy_ratio"] > 0.6)
-        bullish_signals += int(m["smart_wallets_1h"] >= 2)
-        bullish_signals += int(m["smart_buy_pressure_usd"] > 0)
-        bullish_signals += int(m["vol_5m_usd"] > 5_000)
+        sub = {
+            "price_5m_up":      m["price_change_5m"] > 0.05,
+            "price_1h_up":      m["price_change_1h"] > 0.15,
+            "buy_pressure_dex": m["buy_ratio"] > 0.6,
+            "vol_5m":           m["vol_5m_usd"] > 5_000,
+            "vol_1h":           m["vol_1h_usd"] > 50_000,
+            "liquidity_strong": m["liquidity_usd"] > 75_000,
+            "smart_wallets":    m["smart_wallets_1h"] >= 2,
+            "smart_pressure":   m["smart_buy_pressure_usd"] > 0,
+        }
+        score = sum(sub.values())
 
-        if bullish_signals >= 5:
-            return Decision(ACTION_BUY_FULL, 1.0, f"bullish_{bullish_signals}/6")
-        if bullish_signals >= 3:
-            return Decision(ACTION_BUY_SMALL, 0.5, f"bullish_{bullish_signals}/6")
-        return Decision(ACTION_SKIP, 0.0, f"weak_signal_{bullish_signals}/6")
+        if score >= self.THRESHOLD_FULL:
+            return Decision(ACTION_BUY_FULL, 1.0, f"bullish_{score}/8")
+        if score >= self.THRESHOLD_SMALL:
+            return Decision(ACTION_BUY_SMALL, 0.5, f"bullish_{score}/8")
+        return Decision(ACTION_SKIP, 0.0, f"weak_signal_{score}/8")
 
 
 class PPOPolicy:
