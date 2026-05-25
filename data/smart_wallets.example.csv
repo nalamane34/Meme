@@ -1,0 +1,6 @@
+address,label,tier,win_rate,pnl_30d_usd
+# Replace with real "smart money" wallets from GMGN.ai / Birdeye leaderboards.
+# Tier 1 = highest-confidence; tier 2/3 = wider net.
+# Examples are placeholders, NOT real addresses — do not use.
+ExampleWallet1111111111111111111111111111111,kingofmemes,1,0.62,150000
+ExampleWallet2222222222222222222222222222222,scalper-007,2,0.48,40000
